@@ -47,8 +47,8 @@
                  :style="item.rightChecked ? 'background: #FDF6EC' : ''"
             >
               <el-checkbox :class=" props.type === 'all-email' ? 'all-email-checkbox' : 'checkbox'"
-                           v-model="item.checked" @click.stop></el-checkbox>
-              <div @click.stop="starChange(item)" class="pc-star" v-if="showStar">
+                           v-model="item.checked" :disabled="item.canModify === false" @click.stop></el-checkbox>
+              <div @click.stop="starChange(item)" class="pc-star" v-if="showStar && item.canModify !== false">
                 <Icon v-if="item.isStar" icon="fluent-color:star-16" width="20" height="20"/>
                 <Icon v-else icon="solar:star-line-duotone" width="18" height="18"/>
               </div>
@@ -163,7 +163,7 @@
               </div>
             </template>
           </el-dropdown-item>
-          <el-dropdown-item v-if="['email'].includes(props.type)" @click="emailRead(rightClickEmail.emailId)" >
+          <el-dropdown-item v-if="['email'].includes(props.type) && rightClickEmail.canModify !== false" @click="emailRead(rightClickEmail.emailId)" >
             <template #default>
               <div class="right-dropdown-item">
                 <Icon icon="fluent:mail-read-20-regular" width="20" height="20" />
@@ -219,7 +219,7 @@
               </div>
             </template>
           </el-dropdown-item>
-          <el-dropdown-item @click="rightDelete(rightClickEmail.emailId)">
+          <el-dropdown-item v-if="rightClickEmail.canDelete !== false" @click="rightDelete(rightClickEmail.emailId)">
             <template #default>
               <div class="right-dropdown-item">
                 <Icon icon="uiw:delete" width="16" height="20" style="margin-left: 1px;margin-right: 3px" />
@@ -620,6 +620,8 @@ const handleRead = () => {
 }
 
 function emailRead(emailId) {
+  const item = emailList.find(email => email.emailId === emailId);
+  if (item?.canModify === false) return;
   props.emailRead([emailId])
   localRead([emailId]);
 }
@@ -770,13 +772,13 @@ function addItem(email) {
 }
 
 function handleCheckAllChange(val) {
-  emailList.forEach(item => item.checked = val);
+  emailList.forEach(item => item.checked = val && item.canModify !== false);
   isIndeterminate.value = false;
 }
 
 // 获取选中的邮件列表id
 function getSelectedMailsIds() {
-  return emailList.filter(item => item.checked).map(item => item.emailId);
+  return emailList.filter(item => item.checked && item.canDelete !== false).map(item => item.emailId);
 }
 
 function getSelectedDraftsIds() {

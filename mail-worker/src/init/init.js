@@ -29,8 +29,27 @@ const dbInit = {
 		await this.v2_8DB(c);
 		await this.v2_9DB(c);
 		await this.v3_0DB(c);
+		await this.v3_1DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v3_1DB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE role ADD COLUMN shared_email TEXT NOT NULL DEFAULT '';`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+
+		try {
+			await c.env.db.prepare(`
+				INSERT INTO perm (name, perm_key, pid, type, sort)
+				SELECT '共享邮箱', 'email:shared', 1, 2, 2
+				WHERE NOT EXISTS (SELECT 1 FROM perm WHERE perm_key = 'email:shared')
+			`).run();
+		} catch (e) {
+			console.warn(`跳过权限：${e.message}`);
+		}
 	},
 
 	async v3_0DB(c) {

@@ -92,6 +92,9 @@
               :value="item.value"
           />
         </el-select>
+        <el-input-tag class="dialog-input" v-model="form.sharedEmail"
+                      @add-tag="sharedEmailAddTag" type="text"
+                      :placeholder="$t('sharedEmail')" autocomplete="off"/>
         <div class="dialog-input">
           <el-input-number :placeholder="$t('order')" :min="0" :max="9999" v-model.number="form.sort"
                            controls-position="right" autocomplete="off"/>
@@ -187,7 +190,8 @@ const form = reactive({
   accountCount: 0,
   sort: 0,
   isDefault: 0,
-  availDomain: []
+  availDomain: [],
+  sharedEmail: []
 })
 
 let domainOptions = []
@@ -227,6 +231,19 @@ function banEmailAddTag(val) {
   emails.forEach(email => {
     if ((isEmail(email) || isDomain(email) || email === '*') && !form.banEmail.includes(email)) {
       form.banEmail.push(email)
+    }
+  })
+}
+
+function sharedEmailAddTag(val) {
+  const emails = Array.from(new Set(
+      val.split(/[,，]/).map(item => item.trim().toLowerCase()).filter(item => item)
+  ));
+
+  form.sharedEmail.splice(form.sharedEmail.length - 1, 1)
+  emails.forEach(email => {
+    if (isEmail(email) && !form.sharedEmail.includes(email)) {
+      form.sharedEmail.push(email)
     }
   })
 }
@@ -331,6 +348,7 @@ function resetForm() {
   form.accountCount = 0
   form.banEmail = []
   form.availDomain = []
+  form.sharedEmail = []
   tree.value.setCheckedKeys([])
 }
 
@@ -347,6 +365,7 @@ function openRoleSet(role) {
   form.accountCount = role.accountCount
   form.banEmail = role.banEmail
   form.availDomain = role.availDomain
+  form.sharedEmail = role.sharedEmail || []
   nextTick(() => {
     tree.value.setCheckedKeys(role.permIds)
   })

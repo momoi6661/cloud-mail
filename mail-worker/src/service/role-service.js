@@ -1,21 +1,22 @@
 import role from '../entity/role';
 import orm from '../entity/orm';
-import { eq, asc, inArray, and } from 'drizzle-orm';
+import { eq, asc, inArray, and, sql } from 'drizzle-orm';
 import BizError from '../error/biz-error';
 import rolePerm from '../entity/role-perm';
 import perm from '../entity/perm';
-import { permConst, roleConst } from '../const/entity-const';
+import { permConst, roleConst, isDel } from '../const/entity-const';
 import userService from './user-service';
 import user from '../entity/user';
 import verifyUtils from '../utils/verify-utils';
 import { t } from '../i18n/i18n.js';
 import emailUtils from '../utils/email-utils';
+import account from '../entity/account';
 
 const roleService = {
 
 	async add(c, params, userId) {
 
-		let { name, permIds, banEmail, availDomain } = params;
+		let { name, permIds, banEmail, availDomain, sharedEmail = [] } = params;
 
 		if (!name) {
 			throw new BizError(t('emptyRoleName'));
@@ -32,8 +33,9 @@ const roleService = {
 		banEmail = banEmail.join(',');
 
 		availDomain = availDomain.join(',');
+		sharedEmail = await this.validateSharedEmails(c, sharedEmail, permIds);
 
-		roleRow = await orm(c).insert(role).values({...params, banEmail, availDomain, userId}).returning().get();
+		roleRow = await orm(c).insert(role).values({...params, banEmail, availDomain, sharedEmail, userId}).returning().get();
 
 		if (permIds.length === 0) {
 			return;
@@ -57,6 +59,7 @@ const roleService = {
 			role.banEmail = role.banEmail.split(",").filter(item => item !== "");
 			role.availDomain = role.availDomain.split(",").filter(item => item !== "");
 			role.permIds = permList.filter(perm => perm.roleId === role.roleId).map(perm => perm.permId);
+			role.sharedEmail = role.sharedEmail ? role.sharedEmail.split(",").filter(item => item !== "") : [];
 		});
 
 		return roleList;
@@ -64,7 +67,7 @@ const roleService = {
 
 	async setRole(c, params) {
 
-		let { name, permIds, roleId, banEmail, availDomain } = params;
+		let { name, permIds, roleId, banEmail, availDomain, sharedEmail = [] } = params;
 
 		if (!name) {
 			throw new BizError(t('emptyRoleName'));
@@ -81,8 +84,9 @@ const roleService = {
 		banEmail = banEmail.join(',')
 
 		availDomain = availDomain.join(',')
+		sharedEmail = await this.validateSharedEmails(c, sharedEmail, permIds);
 
-		await orm(c).update(role).set({...params, banEmail, availDomain}).where(eq(role.roleId, roleId)).run();
+		await orm(c).update(role).set({...params, banEmail, availDomain, sharedEmail}).where(eq(role.roleId, roleId)).run();
 		await orm(c).delete(rolePerm).where(eq(rolePerm.roleId, roleId)).run();
 
 		if (permIds.length > 0) {
@@ -152,6 +156,67 @@ const roleService = {
 
 	selectByUserId(c, userId) {
 		return orm(c).select(role).from(user).leftJoin(role, eq(role.roleId, user.type)).where(eq(user.userId, userId)).get();
+	},
+
+	async hasPermKey(c, userId, permKey) {
+		const row = await orm(c).select({ permId: perm.permId }).from(user)
+			.leftJoin(rolePerm, eq(rolePerm.roleId, user.type))
+			.leftJoin(perm, eq(perm.permId, rolePerm.permId))
+			.where(and(eq(user.userId, userId), eq(perm.permKey, permKey))).get();
+		return !!row;
+	},
+
+	async selectSharedAccountIds(c, userId) {
+		if (!(await this.hasPermKey(c, userId, 'email:shared'))) {
+			return [];
+		}
+
+		const roleRow = await this.selectByUserId(c, userId);
+		const sharedEmails = roleRow?.sharedEmail ? roleRow.sharedEmail.split(',').filter(item => item !== '') : [];
+		if (sharedEmails.length === 0) {
+			return [];
+		}
+
+		const placeholders = sharedEmails.map(() => '?').join(',');
+		const result = await c.env.db.prepare(
+			`SELECT account_id FROM account WHERE is_del = 0 AND lower(email) IN (${placeholders})`
+		).bind(...sharedEmails.map(item => item.toLowerCase())).all();
+		return (result.results || []).map(row => row.account_id);
+	},
+
+	async validateSharedEmails(c, sharedEmails, permIds = []) {
+		if (!Array.isArray(sharedEmails)) {
+			sharedEmails = sharedEmails ? String(sharedEmails).split(',') : [];
+		}
+
+		const normalized = [...new Set(sharedEmails.map(item => String(item).trim().toLowerCase()).filter(Boolean))];
+		const sharedPerm = await orm(c).select({ permId: perm.permId }).from(perm)
+			.where(eq(perm.permKey, 'email:shared')).get();
+		if (!sharedPerm || !permIds.map(Number).includes(sharedPerm.permId)) {
+			return '';
+		}
+
+		for (const email of normalized) {
+			if (!verifyUtils.isEmail(email)) {
+				throw new BizError(t('notEmail'));
+			}
+			const accountRow = await c.env.db.prepare(`
+				SELECT a.account_id
+				FROM account a
+				JOIN user u ON u.user_id = a.user_id
+				WHERE a.is_del = 0 AND lower(a.email) = ? AND lower(u.email) = lower(?)
+			`).bind(email, c.env.admin).first();
+			if (!accountRow) {
+				throw new BizError(t('sharedMailAdminOnly'));
+			}
+			const existingAccount = await orm(c).select({ accountId: account.accountId }).from(account)
+				.where(and(sql`${account.email} COLLATE NOCASE = ${email}`, eq(account.isDel, isDel.NORMAL)))
+				.get();
+			if (!existingAccount) {
+				throw new BizError(t('sharedMailNotExist'));
+			}
+		}
+		return normalized.join(',');
 	},
 
 	hasAvailDomainPerm(availDomain, email) {

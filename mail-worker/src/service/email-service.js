@@ -54,6 +54,16 @@ const emailService = {
 			allReceive = accountRow.allReceive;
 		}
 
+		const visibleAccountIds = await this.selectVisibleAccountIds(c, userId, accountId);
+		const hasSharedAccount = visibleAccountIds.length > 1;
+		const ownAccountCondition = allReceive ? eq(1, 1) : eq(email.accountId, accountId);
+		const visibleAccountCondition = hasSharedAccount
+			? or(
+				and(eq(email.userId, userId), ownAccountCondition),
+				inArray(email.accountId, visibleAccountIds.slice(1))
+			)
+			: and(eq(email.userId, userId), ownAccountCondition);
+
 		const query = orm(c)
 			.select({
 				...email,
@@ -72,8 +82,7 @@ const emailService = {
 			)
 			.where(
 				and(
-					allReceive ? eq(1,1) : eq(email.accountId, accountId),
-					eq(email.userId, userId),
+					visibleAccountCondition,
 					timeSort ? gt(email.emailId, emailId) : lt(email.emailId, emailId),
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
@@ -96,8 +105,7 @@ const emailService = {
 			)
 			.where(
 				and(
-					allReceive ? eq(1,1) : eq(email.accountId, accountId),
-					eq(email.userId, userId),
+					visibleAccountCondition,
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
 					eq(account.isDel, isDel.NORMAL)
@@ -106,8 +114,7 @@ const emailService = {
 
 		const latestEmailQuery = orm(c).select().from(email).where(
 			and(
-				allReceive ? eq(1,1) : eq(email.accountId, accountId),
-				eq(email.userId, userId),
+				visibleAccountCondition,
 				eq(email.type, type),
 				eq(email.isDel, isDel.NORMAL)
 			))
@@ -117,7 +124,9 @@ const emailService = {
 
 		list = list.map(item => ({
 			...item,
-			isStar: item.starId != null ? 1 : 0
+			isStar: item.starId != null ? 1 : 0,
+			canModify: item.userId === userId,
+			canDelete: item.userId === userId
 		}));
 
 
@@ -137,11 +146,31 @@ const emailService = {
 	async delete(c, params, userId) {
 		const { emailIds } = params;
 		const emailIdList = emailIds.split(',').map(Number);
+		const protectedRows = await orm(c).select({ emailId: email.emailId }).from(email).where(and(
+			inArray(email.emailId, emailIdList),
+			ne(email.userId, userId),
+			eq(email.isDel, isDel.NORMAL)
+		)).all();
+		if (protectedRows.length > 0) {
+			throw new BizError(t('sharedMailReadOnly'), 403);
+		}
 		await orm(c).update(email).set({ isDel: isDel.DELETE }).where(
 			and(
 				eq(email.userId, userId),
 				inArray(email.emailId, emailIdList)))
 			.run();
+	},
+
+	async selectVisibleAccountIds(c, userId, accountId) {
+		const currentAccount = await accountService.selectById(c, accountId);
+		const userRow = await userService.selectById(c, userId);
+		if (!currentAccount || !userRow || currentAccount.userId !== userId ||
+			currentAccount.email.toLowerCase() !== userRow.email.toLowerCase()) {
+			return [accountId];
+		}
+
+		const sharedAccountIds = await roleService.selectSharedAccountIds(c, userId);
+		return [accountId, ...sharedAccountIds.filter(id => id !== accountId)];
 	},
 
 	receive(c, params, cidAttList, r2domain) {
@@ -250,7 +279,7 @@ const emailService = {
 		//如果是回复邮件
 		if (sendType === 'reply') {
 
-			emailRow = await this.selectById(c, emailId);
+			emailRow = await this.selectById(c, emailId, userId);
 
 			if (!emailRow) {
 				throw new BizError(t('notExistEmailReply'));
@@ -693,11 +722,16 @@ const emailService = {
 		return document.toString();
 	},
 
-	selectById(c, emailId) {
-		return orm(c).select().from(email).where(
+	async selectById(c, emailId, userId) {
+		const emailRow = await orm(c).select().from(email).where(
 			and(eq(email.emailId, emailId),
 				eq(email.isDel, isDel.NORMAL)))
 			.get();
+		if (!emailRow || userId === undefined || emailRow.userId === userId) {
+			return emailRow;
+		}
+		const sharedAccountIds = await roleService.selectSharedAccountIds(c, userId);
+		return sharedAccountIds.includes(emailRow.accountId) ? emailRow : null;
 	},
 
 	async latest(c, params, userId) {
@@ -709,6 +743,12 @@ const emailService = {
 			allReceive = accountRow.allReceive;
 		}
 
+		const visibleAccountIds = await this.selectVisibleAccountIds(c, userId, accountId);
+		const ownAccountCondition = allReceive ? eq(1, 1) : eq(email.accountId, accountId);
+		const visibleAccountCondition = visibleAccountIds.length > 1
+			? or(and(eq(email.userId, userId), ownAccountCondition), inArray(email.accountId, visibleAccountIds.slice(1)))
+			: and(eq(email.userId, userId), ownAccountCondition);
+
 		let list = await orm(c).select({...email}).from(email)
 			.leftJoin(
 				account,
@@ -717,10 +757,9 @@ const emailService = {
 			.where(
 				and(
 					gt(email.emailId, emailId),
-					eq(email.userId, userId),
+					visibleAccountCondition,
 					eq(email.isDel, isDel.NORMAL),
 					eq(account.isDel, isDel.NORMAL),
-					allReceive ? eq(1,1) : eq(email.accountId, accountId),
 					eq(email.type, emailConst.type.RECEIVE)
 				))
 			.orderBy(desc(email.emailId))
@@ -728,7 +767,11 @@ const emailService = {
 
 		await this.emailAddAtt(c, list);
 
-		return list;
+		return list.map(item => ({
+			...item,
+			canModify: item.userId === userId,
+			canDelete: item.userId === userId
+		}));
 	},
 
 	async physicsDelete(c, params) {

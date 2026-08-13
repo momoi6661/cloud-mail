@@ -9,6 +9,8 @@ import { parseHTML } from 'linkedom';
 import { v4 as uuidv4 } from 'uuid';
 import domainUtils from '../utils/domain-uitls';
 import settingService from "./setting-service";
+import email from '../entity/email';
+import roleService from './role-service';
 
 const attService = {
 
@@ -34,13 +36,18 @@ const attService = {
 		await orm(c).insert(att).values(attachments).run();
 	},
 
-	list(c, params, userId) {
+	async list(c, params, userId) {
 		const { emailId } = params;
+		const emailRow = await orm(c).select({ userId: email.userId, accountId: email.accountId }).from(email)
+			.where(eq(email.emailId, Number(emailId))).get();
+		const canRead = emailRow && (emailRow.userId === userId || (await roleService.selectSharedAccountIds(c, userId)).includes(emailRow.accountId));
+		if (!canRead) {
+			return [];
+		}
 
 		return orm(c).select().from(att).where(
 			and(
 				eq(att.emailId, emailId),
-				eq(att.userId, userId),
 				eq(att.type, attConst.type.ATT),
 				isNull(att.contentId)
 			)

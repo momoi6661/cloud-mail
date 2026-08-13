@@ -67,8 +67,8 @@ function jumpContent(email) {
   emailStore.contentData.email = email
   emailStore.contentData.delType = 'logic'
   emailStore.contentData.showUnread = true
-  emailStore.contentData.showStar = true
-  emailStore.contentData.showReply = true
+  emailStore.contentData.showStar = email.canModify !== false
+  emailStore.contentData.showReply = email.canModify !== false
   router.push('/message')
 }
 

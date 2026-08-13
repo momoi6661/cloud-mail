@@ -336,6 +336,7 @@ const zh = {
     searchUser: '搜索用户',
     searchEmail: '搜索邮箱',
     searchSender: '搜索发件人',
-    userEmail: '用户邮箱'
+    userEmail: '用户邮箱',
+    sharedEmail: '共享邮箱地址（仅管理员邮箱）'
 }
 export default zh

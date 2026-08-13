@@ -336,7 +336,8 @@ const en = {
     searchUser: 'Search by user',
     searchEmail: 'Search by Email',
     searchSender: 'Search by Sender',
-    userEmail: 'Email Address'
+    userEmail: 'Email Address',
+    sharedEmail: 'Shared mailbox addresses (admin only)'
 }
 
 export default en
