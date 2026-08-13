@@ -93,7 +93,7 @@
           />
         </el-select>
         <el-input-tag class="dialog-input" v-model="form.sharedEmail"
-                      @add-tag="sharedEmailAddTag" type="text"
+                      @input="sharedEmailInputChange" @add-tag="sharedEmailAddTag" type="text"
                       :placeholder="$t('sharedEmail')" autocomplete="off"/>
         <div class="dialog-input">
           <el-input-number :placeholder="$t('order')" :min="0" :max="9999" v-model.number="form.sort"
@@ -169,6 +169,7 @@ const treeList = reactive([])
 const roles = ref([])
 const tree = ref({})
 const permLoading = ref(false)
+const sharedEmailDraft = ref('')
 const tableLoading = ref(false)
 const desShow = ref(true)
 const settingWidth = ref(null)
@@ -235,17 +236,33 @@ function banEmailAddTag(val) {
   })
 }
 
+function sharedEmailInputChange(val) {
+  sharedEmailDraft.value = val || ''
+}
+
 function sharedEmailAddTag(val) {
+  const values = Array.isArray(val) ? val : [val]
   const emails = Array.from(new Set(
-      val.split(/[,，]/).map(item => item.trim().toLowerCase()).filter(item => item)
+      values.flatMap(item => String(item).split(/[,，]/))
+          .map(item => item.trim().toLowerCase()).filter(item => item)
   ));
 
-  form.sharedEmail.splice(form.sharedEmail.length - 1, 1)
+  form.sharedEmail.splice(Math.max(form.sharedEmail.length - values.length, 0), values.length)
   emails.forEach(email => {
     if (isEmail(email) && !form.sharedEmail.includes(email)) {
       form.sharedEmail.push(email)
     }
   })
+  sharedEmailDraft.value = ''
+}
+
+function getSharedEmails() {
+  const draftEmails = sharedEmailDraft.value
+      .split(/[,，]/)
+      .map(item => item.trim().toLowerCase())
+      .filter(item => item)
+
+  return Array.from(new Set([...form.sharedEmail, ...draftEmails]))
 }
 
 
@@ -313,7 +330,7 @@ function setRole() {
     return
   }
 
-  const params = {...form, roleId: chooseRole.roleId}
+  const params = {...form, sharedEmail: getSharedEmails(), roleId: chooseRole.roleId}
   const checkedId = tree.value.getCheckedKeys()
   const halfId = tree.value.getHalfCheckedKeys()
   params.permIds = [...checkedId, ...halfId]
@@ -349,6 +366,7 @@ function resetForm() {
   form.banEmail = []
   form.availDomain = []
   form.sharedEmail = []
+  sharedEmailDraft.value = ''
   tree.value.setCheckedKeys([])
 }
 
@@ -366,6 +384,7 @@ function openRoleSet(role) {
   form.banEmail = role.banEmail
   form.availDomain = role.availDomain
   form.sharedEmail = role.sharedEmail || []
+  sharedEmailDraft.value = ''
   nextTick(() => {
     tree.value.setCheckedKeys(role.permIds)
   })
@@ -379,7 +398,7 @@ function openAddRole() {
 }
 
 function addRole() {
-  const params = {...form}
+  const params = {...form, sharedEmail: getSharedEmails()}
   const checkedId = tree.value.getCheckedKeys()
   const halfId = tree.value.getHalfCheckedKeys()
   params.permIds = [...checkedId, ...halfId]

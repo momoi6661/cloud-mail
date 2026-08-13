@@ -193,6 +193,9 @@ const roleService = {
 		const sharedPerm = await orm(c).select({ permId: perm.permId }).from(perm)
 			.where(eq(perm.permKey, 'email:shared')).get();
 		if (!sharedPerm || !permIds.map(Number).includes(sharedPerm.permId)) {
+			if (normalized.length > 0) {
+				throw new BizError(t('sharedMailPermRequired'));
+			}
 			return '';
 		}
 

@@ -68,6 +68,7 @@ const en = {
 	notConfigOss: 'Object storage not configured',
 	sharedMailNotExist: 'Shared mailbox does not exist',
 	sharedMailAdminOnly: 'The shared mailbox must belong to the administrator',
+	sharedMailPermRequired: 'Select the "View Shared Mailbox" permission before adding shared mailbox addresses',
 	sharedMailReadOnly: 'Shared mail is read-only and cannot be modified or deleted',
 	perms: {
 		"邮件": "Emails",

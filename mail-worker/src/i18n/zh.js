@@ -68,6 +68,7 @@ const zh = {
 	notConfigOss: '对象存储未配置',
 	sharedMailNotExist: '共享邮箱不存在',
 	sharedMailAdminOnly: '共享邮箱必须属于管理员',
+	sharedMailPermRequired: '填写共享邮箱前，请先勾选“共享邮箱查看”权限',
 	sharedMailReadOnly: '共享邮件仅可查看，不能修改或删除',
 	perms: {
 		"邮件": "邮件",
