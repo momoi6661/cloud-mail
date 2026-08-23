@@ -337,7 +337,13 @@ const en = {
     searchEmail: 'Search by Email',
     searchSender: 'Search by Sender',
     userEmail: 'Email Address',
-    sharedEmail: 'Allowed recipient addresses (one or more)'
+    sharedEmail: 'Allowed recipient addresses (one or more)',
+    userSharedRecipients: 'Shared Recipients',
+    inheritedSharedRecipients: 'Inherited from role',
+    personalSharedRecipients: 'Personal additions',
+    effectiveSharedRecipients: 'Effective recipients',
+    sharedRecipientPermWarning: 'The current role cannot view shared mail. Personal recipients will be saved but remain inactive.',
+    none: 'None'
 }
 
 export default en

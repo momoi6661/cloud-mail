@@ -337,6 +337,12 @@ const zh = {
     searchEmail: '搜索邮箱',
     searchSender: '搜索发件人',
     userEmail: '用户邮箱',
-    sharedEmail: '允许查看的收件人地址（可填写一个或多个）'
+    sharedEmail: '允许查看的收件人地址（可填写一个或多个）',
+    userSharedRecipients: '共享收件人',
+    inheritedSharedRecipients: '从角色继承',
+    personalSharedRecipients: '个人追加',
+    effectiveSharedRecipients: '最终有效范围',
+    sharedRecipientPermWarning: '当前角色没有共享邮件权限，以下个人配置会保存，但暂时不会生效',
+    none: '无'
 }
 export default zh

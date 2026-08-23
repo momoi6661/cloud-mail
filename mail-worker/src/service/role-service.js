@@ -18,6 +18,20 @@ export function normalizeSharedRecipients(sharedEmails) {
 	return [...new Set(sharedEmails.map(item => String(item).trim().toLowerCase()).filter(Boolean))];
 }
 
+export function mergeSharedRecipients(...sources) {
+	return normalizeSharedRecipients(sources.flatMap(source => normalizeSharedRecipients(source)));
+}
+
+export function normalizeAndValidateSharedRecipients(sharedEmails) {
+	const normalized = normalizeSharedRecipients(sharedEmails);
+	for (const email of normalized) {
+		if (!verifyUtils.isEmail(email)) {
+			throw new BizError(t('notEmail'));
+		}
+	}
+	return normalized;
+}
+
 export function emailMatchesSharedRecipients(emailRow, sharedRecipients) {
 	const allowed = new Set(normalizeSharedRecipients(sharedRecipients));
 	if (!emailRow || allowed.size === 0) {
@@ -171,7 +185,12 @@ const roleService = {
 	},
 
 	selectByIdsHasPermKey(c, types, permKey) {
-		return orm(c).select({ roleId: role.roleId, sendType: role.sendType, sendCount: role.sendCount }).from(perm)
+		return orm(c).select({
+			roleId: role.roleId,
+			sendType: role.sendType,
+			sendCount: role.sendCount,
+			sharedEmail: role.sharedEmail
+		}).from(perm)
 			.leftJoin(rolePerm, eq(perm.permId, rolePerm.permId))
 			.leftJoin(role, eq(role.roleId, rolePerm.roleId))
 			.where(and(eq(perm.permKey, permKey), inArray(role.roleId, types))).all();
@@ -201,8 +220,12 @@ const roleService = {
 			return null;
 		}
 
-		const roleRow = await this.selectByUserId(c, userId);
-		const recipients = normalizeSharedRecipients(roleRow?.sharedEmail);
+		const [roleRow, userRow] = await Promise.all([
+			this.selectByUserId(c, userId),
+			orm(c).select({ sharedEmail: user.sharedEmail }).from(user)
+				.where(and(eq(user.userId, userId), eq(user.isDel, isDel.NORMAL))).get()
+		]);
+		const recipients = mergeSharedRecipients(roleRow?.sharedEmail, userRow?.sharedEmail);
 		if (recipients.length === 0) {
 			return null;
 		}
@@ -220,7 +243,7 @@ const roleService = {
 	},
 
 	async validateSharedEmails(c, sharedEmails, permIds = []) {
-		const normalized = normalizeSharedRecipients(sharedEmails);
+		const normalized = normalizeAndValidateSharedRecipients(sharedEmails);
 		const sharedPerm = await orm(c).select({ permId: perm.permId }).from(perm)
 			.where(eq(perm.permKey, 'email:shared')).get();
 		if (!sharedPerm || !permIds.map(Number).includes(sharedPerm.permId)) {
@@ -230,11 +253,6 @@ const roleService = {
 			return '';
 		}
 
-		for (const email of normalized) {
-			if (!verifyUtils.isEmail(email)) {
-				throw new BizError(t('notEmail'));
-			}
-		}
 		return normalized.join(',');
 	},
 

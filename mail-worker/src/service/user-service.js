@@ -10,7 +10,11 @@ import cryptoUtils from '../utils/crypto-utils';
 import emailService from './email-service';
 import dayjs from 'dayjs';
 import permService from './perm-service';
-import roleService from './role-service';
+import roleService, {
+	mergeSharedRecipients,
+	normalizeAndValidateSharedRecipients,
+	normalizeSharedRecipients
+} from './role-service';
 import emailUtils from '../utils/email-utils';
 import saltHashUtils from '../utils/crypto-utils';
 import constant from '../const/constant';
@@ -165,14 +169,15 @@ const userService = {
 
 		const types = [...new Set(list.map(user => user.type))];
 
-		const [emailCounts, delEmailCounts, sendCounts, delSendCounts, accountCounts, delAccountCounts, roleList] = await Promise.all([
+		const [emailCounts, delEmailCounts, sendCounts, delSendCounts, accountCounts, delAccountCounts, roleList, sharedRoleList] = await Promise.all([
 			emailService.selectUserEmailCountList(c, userIds, emailConst.type.RECEIVE),
 			emailService.selectUserEmailCountList(c, userIds, emailConst.type.RECEIVE, isDel.DELETE),
 			emailService.selectUserEmailCountList(c, userIds, emailConst.type.SEND),
 			emailService.selectUserEmailCountList(c, userIds, emailConst.type.SEND, isDel.DELETE),
 			accountService.selectUserAccountCountList(c, userIds),
 			accountService.selectUserAccountCountList(c, userIds, isDel.DELETE),
-			roleService.selectByIdsHasPermKey(c, types,'email:send')
+			roleService.selectByIdsHasPermKey(c, types,'email:send'),
+			roleService.selectByIdsHasPermKey(c, types,'email:shared')
 		]);
 
 		const receiveMap = Object.fromEntries(emailCounts.map(item => [item.userId, item.count]));
@@ -182,6 +187,10 @@ const userService = {
 		const delReceiveMap = Object.fromEntries(delEmailCounts.map(item => [item.userId, item.count]));
 		const delSendMap = Object.fromEntries(delSendCounts.map(item => [item.userId, item.count]));
 		const delAccountMap = Object.fromEntries(delAccountCounts.map(item => [item.userId, item.count]));
+		const sharedRoleMap = Object.fromEntries(sharedRoleList.map(item => [
+			item.roleId,
+			normalizeSharedRecipients(item.sharedEmail)
+		]));
 
 		for (const user of list) {
 
@@ -194,6 +203,12 @@ const userService = {
 			user.delReceiveEmailCount = delReceiveMap[userId] || 0;
 			user.delSendEmailCount = delSendMap[userId] || 0;
 			user.delAccountCount = delAccountMap[userId] || 0;
+			const personalSharedEmail = normalizeSharedRecipients(user.sharedEmail);
+			const roleSharedEmail = sharedRoleMap[user.type] || [];
+			user.sharedEmail = personalSharedEmail;
+			user.roleSharedEmail = roleSharedEmail;
+			user.effectiveSharedEmail = mergeSharedRecipients(roleSharedEmail, personalSharedEmail);
+			user.hasSharedPerm = Object.hasOwn(sharedRoleMap, user.type);
 
 			const roleIndex = roleList.findIndex(roleRow => user.type === roleRow.roleId);
 			let sendAction = {};
@@ -284,6 +299,22 @@ const userService = {
 			.where(eq(user.userId, userId))
 			.run();
 
+	},
+
+	async setSharedEmail(c, params) {
+		const { userId } = params;
+		const userRow = await this.selectById(c, Number(userId));
+		if (!userRow) {
+			throw new BizError(t('notExist'));
+		}
+		if (userRow.email.toLowerCase() === String(c.env.admin || '').toLowerCase()) {
+			throw new BizError(t('unauthorized'), 403);
+		}
+
+		const sharedEmail = normalizeAndValidateSharedRecipients(params.sharedEmail);
+		await orm(c).update(user).set({ sharedEmail: sharedEmail.join(',') })
+			.where(eq(user.userId, Number(userId))).run();
+		return sharedEmail;
 	},
 
 	async incrUserSendCount(c, quantity, userId) {

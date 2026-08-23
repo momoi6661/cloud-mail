@@ -91,6 +91,7 @@
                     <el-dropdown-item @click="openSetPwd(props.row)" >{{ $t('chgPwd') }}</el-dropdown-item>
                     <el-dropdown-item @click="openSetType(props.row)" >{{ $t('perm') }}</el-dropdown-item>
                     <template v-if="props.row.type !== 0">
+                      <el-dropdown-item @click="openSetSharedEmail(props.row)">{{ $t('userSharedRecipients') }}</el-dropdown-item>
                       <el-dropdown-item v-if="props.row.isDel !== 1" @click="setStatus(props.row)">
                         {{ setStatusName(props.row) }}
                       </el-dropdown-item>
@@ -151,6 +152,32 @@
         <el-button :disabled="userForm.type === 0" class="btn" :loading="settingLoading" type="primary" @click="setType"
         >{{ $t('save') }}
         </el-button>
+      </div>
+    </el-dialog>
+    <el-dialog class="dialog" v-model="sharedEmailShow" :title="$t('userSharedRecipients')" @closed="resetSharedEmailForm">
+      <div class="dialog-box shared-email-dialog">
+        <el-alert v-if="!sharedEmailForm.hasSharedPerm" :title="$t('sharedRecipientPermWarning')"
+                  type="warning" :closable="false" show-icon/>
+        <div class="shared-email-section">
+          <div class="shared-email-label">{{ $t('inheritedSharedRecipients') }}</div>
+          <div class="shared-email-tags" v-if="sharedEmailForm.roleSharedEmail.length">
+            <el-tag v-for="item in sharedEmailForm.roleSharedEmail" :key="item" type="info">{{ item }}</el-tag>
+          </div>
+          <div class="shared-email-empty" v-else>{{ $t('none') }}</div>
+        </div>
+        <div class="shared-email-section">
+          <div class="shared-email-label">{{ $t('personalSharedRecipients') }}</div>
+          <el-input-tag v-model="sharedEmailForm.sharedEmail" @input="sharedEmailInputChange"
+                        @add-tag="sharedEmailAddTag" :placeholder="$t('sharedEmail')" autocomplete="off"/>
+        </div>
+        <div class="shared-email-section">
+          <div class="shared-email-label">{{ $t('effectiveSharedRecipients') }}</div>
+          <div class="shared-email-tags" v-if="effectiveSharedEmail.length">
+            <el-tag v-for="item in effectiveSharedEmail" :key="item" type="success">{{ item }}</el-tag>
+          </div>
+          <div class="shared-email-empty" v-else>{{ $t('none') }}</div>
+        </div>
+        <el-button class="btn" :loading="settingLoading" type="primary" @click="saveSharedEmail">{{ $t('save') }}</el-button>
       </div>
     </el-dialog>
     <el-dialog v-model="showAdd" :title="$t('addUser')" @closed="resetAddForm">
@@ -321,6 +348,14 @@
               </div>
             </template>
           </el-dropdown-item>
+          <el-dropdown-item v-if="rightClickUser.type !== 0" @click="openSetSharedEmail(rightClickUser)">
+            <template #default>
+              <div class="right-dropdown-item">
+                <Icon icon="fluent:mail-inbox-arrow-down-20-regular" width="21" height="21" />
+                <span>{{ t('userSharedRecipients') }}</span>
+              </div>
+            </template>
+          </el-dropdown-item>
           <el-dropdown-item v-if="rightClickUser.type !== 0">
             <template #default>
               <div class="right-dropdown-item" v-if="rightClickUser.isDel !== 1" @click="setStatus(rightClickUser)" >
@@ -365,13 +400,14 @@
 </template>
 
 <script setup>
-import {defineOptions, h, reactive, ref, watch} from 'vue'
+import {computed, defineOptions, h, reactive, ref, watch} from 'vue'
 import {
   userList,
   userDelete,
   userSetPwd,
   userSetStatus,
   userSetType,
+  userSetSharedEmail,
   userAdd,
   userRestSendCount,
   userRestore,
@@ -456,11 +492,23 @@ const userForm = reactive({
   type: -1,
   userId: 0,
 })
+const sharedEmailDraft = ref('')
+const sharedEmailForm = reactive({
+  userId: 0,
+  sharedEmail: [],
+  roleSharedEmail: [],
+  hasSharedPerm: false,
+})
+const effectiveSharedEmail = computed(() => Array.from(new Set([
+  ...sharedEmailForm.roleSharedEmail,
+  ...getSharedEmails()
+])))
 
 const showAdd = ref(false)
 const accountShow = ref(false)
 const addLoading = ref(false);
 const setTypeShow = ref(false)
+const sharedEmailShow = ref(false)
 const setPwdShow = ref(false)
 const pagerCount = ref(10)
 const settingLoading = ref(false)
@@ -899,12 +947,78 @@ function setType() {
   userSetType({type: userForm.type, userId: userForm.userId}).then(() => {
     chooseUser.type = userForm.type
     setTypeShow.value = false
+    getUserList(false)
     ElMessage({
       message: t('saveSuccessMsg'),
       type: "success",
       plain: true
     })
 
+  }).finally(() => {
+    settingLoading.value = false
+  })
+}
+
+function sharedEmailInputChange(val) {
+  sharedEmailDraft.value = val || ''
+}
+
+function sharedEmailAddTag(val) {
+  const values = Array.isArray(val) ? val : [val]
+  const emails = Array.from(new Set(
+      values.flatMap(item => String(item).split(/[,，]/))
+          .map(item => item.trim().toLowerCase()).filter(Boolean)
+  ))
+
+  sharedEmailForm.sharedEmail.splice(Math.max(sharedEmailForm.sharedEmail.length - values.length, 0), values.length)
+  emails.forEach(email => {
+    if (isEmail(email) && !sharedEmailForm.sharedEmail.includes(email)) {
+      sharedEmailForm.sharedEmail.push(email)
+    }
+  })
+  sharedEmailDraft.value = ''
+}
+
+function getSharedEmails() {
+  const draftEmails = sharedEmailDraft.value.split(/[,，]/)
+      .map(item => item.trim().toLowerCase()).filter(Boolean)
+  return Array.from(new Set([...sharedEmailForm.sharedEmail, ...draftEmails]))
+}
+
+function openSetSharedEmail(user) {
+  chooseUser = user
+  sharedEmailForm.userId = user.userId
+  sharedEmailForm.sharedEmail = [...(user.sharedEmail || [])]
+  sharedEmailForm.roleSharedEmail = [...(user.roleSharedEmail || [])]
+  sharedEmailForm.hasSharedPerm = !!user.hasSharedPerm
+  sharedEmailDraft.value = ''
+  sharedEmailShow.value = true
+}
+
+function resetSharedEmailForm() {
+  sharedEmailForm.userId = 0
+  sharedEmailForm.sharedEmail = []
+  sharedEmailForm.roleSharedEmail = []
+  sharedEmailForm.hasSharedPerm = false
+  sharedEmailDraft.value = ''
+}
+
+function saveSharedEmail() {
+  const sharedEmail = getSharedEmails()
+  if (sharedEmail.some(email => !isEmail(email))) {
+    ElMessage({message: t('notEmailMsg'), type: 'error', plain: true})
+    return
+  }
+
+  settingLoading.value = true
+  userSetSharedEmail({userId: sharedEmailForm.userId, sharedEmail}).then(saved => {
+    chooseUser.sharedEmail = saved || []
+    chooseUser.effectiveSharedEmail = Array.from(new Set([
+      ...(chooseUser.roleSharedEmail || []),
+      ...chooseUser.sharedEmail
+    ]))
+    sharedEmailShow.value = false
+    ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
   }).finally(() => {
     settingLoading.value = false
   })
@@ -1196,6 +1310,34 @@ function adjustWidth() {
       margin-top: 15px;
     }
   }
+}
+
+.shared-email-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shared-email-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shared-email-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.shared-email-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shared-email-empty {
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
 }
 
 .select {
