@@ -10,7 +10,37 @@ import user from '../entity/user';
 import verifyUtils from '../utils/verify-utils';
 import { t } from '../i18n/i18n.js';
 import emailUtils from '../utils/email-utils';
-import account from '../entity/account';
+
+export function normalizeSharedRecipients(sharedEmails) {
+	if (!Array.isArray(sharedEmails)) {
+		sharedEmails = sharedEmails ? String(sharedEmails).split(',') : [];
+	}
+	return [...new Set(sharedEmails.map(item => String(item).trim().toLowerCase()).filter(Boolean))];
+}
+
+export function emailMatchesSharedRecipients(emailRow, sharedRecipients) {
+	const allowed = new Set(normalizeSharedRecipients(sharedRecipients));
+	if (!emailRow || allowed.size === 0) {
+		return false;
+	}
+
+	const recipients = [];
+	if (emailRow.toEmail) {
+		recipients.push(emailRow.toEmail);
+	}
+	try {
+		const parsed = JSON.parse(emailRow.recipient || '[]');
+		const values = Array.isArray(parsed) ? parsed : [parsed];
+		values.forEach(item => {
+			if (typeof item === 'string') recipients.push(item);
+			if (item?.address) recipients.push(item.address);
+		});
+	} catch (_) {
+		// Malformed legacy recipient data must never broaden shared access.
+	}
+
+	return recipients.some(item => allowed.has(String(item).trim().toLowerCase()));
+}
 
 const roleService = {
 
@@ -166,30 +196,31 @@ const roleService = {
 		return !!row;
 	},
 
-	async selectSharedAccountIds(c, userId) {
+	async selectSharedAccess(c, userId) {
 		if (!(await this.hasPermKey(c, userId, 'email:shared'))) {
-			return [];
+			return null;
 		}
 
 		const roleRow = await this.selectByUserId(c, userId);
-		const sharedEmails = roleRow?.sharedEmail ? roleRow.sharedEmail.split(',').filter(item => item !== '') : [];
-		if (sharedEmails.length === 0) {
-			return [];
+		const recipients = normalizeSharedRecipients(roleRow?.sharedEmail);
+		if (recipients.length === 0) {
+			return null;
 		}
 
-		const placeholders = sharedEmails.map(() => '?').join(',');
-		const result = await c.env.db.prepare(
-			`SELECT account_id FROM account WHERE is_del = 0 AND lower(email) IN (${placeholders})`
-		).bind(...sharedEmails.map(item => item.toLowerCase())).all();
-		return (result.results || []).map(row => row.account_id);
+		const adminEmail = String(c.env.admin || '').trim().toLowerCase();
+		const adminRow = await orm(c).select({ userId: user.userId }).from(user)
+			.where(and(sql`lower(${user.email}) = ${adminEmail}`, eq(user.isDel, isDel.NORMAL))).get();
+		return adminRow ? { adminUserId: adminRow.userId, recipients } : null;
+	},
+
+	async canReadSharedEmail(c, userId, emailRow) {
+		const access = await this.selectSharedAccess(c, userId);
+		return !!access && emailRow.userId === access.adminUserId &&
+			emailMatchesSharedRecipients(emailRow, access.recipients);
 	},
 
 	async validateSharedEmails(c, sharedEmails, permIds = []) {
-		if (!Array.isArray(sharedEmails)) {
-			sharedEmails = sharedEmails ? String(sharedEmails).split(',') : [];
-		}
-
-		const normalized = [...new Set(sharedEmails.map(item => String(item).trim().toLowerCase()).filter(Boolean))];
+		const normalized = normalizeSharedRecipients(sharedEmails);
 		const sharedPerm = await orm(c).select({ permId: perm.permId }).from(perm)
 			.where(eq(perm.permKey, 'email:shared')).get();
 		if (!sharedPerm || !permIds.map(Number).includes(sharedPerm.permId)) {
@@ -202,21 +233,6 @@ const roleService = {
 		for (const email of normalized) {
 			if (!verifyUtils.isEmail(email)) {
 				throw new BizError(t('notEmail'));
-			}
-			const accountRow = await c.env.db.prepare(`
-				SELECT a.account_id
-				FROM account a
-				JOIN user u ON u.user_id = a.user_id
-				WHERE a.is_del = 0 AND lower(a.email) = ? AND lower(u.email) = lower(?)
-			`).bind(email, c.env.admin).first();
-			if (!accountRow) {
-				throw new BizError(t('sharedMailAdminOnly'));
-			}
-			const existingAccount = await orm(c).select({ accountId: account.accountId }).from(account)
-				.where(and(sql`${account.email} COLLATE NOCASE = ${email}`, eq(account.isDel, isDel.NORMAL)))
-				.get();
-			if (!existingAccount) {
-				throw new BizError(t('sharedMailNotExist'));
 			}
 		}
 		return normalized.join(',');

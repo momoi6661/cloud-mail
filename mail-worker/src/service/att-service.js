@@ -38,9 +38,14 @@ const attService = {
 
 	async list(c, params, userId) {
 		const { emailId } = params;
-		const emailRow = await orm(c).select({ userId: email.userId, accountId: email.accountId }).from(email)
+		const emailRow = await orm(c).select({
+			userId: email.userId,
+			accountId: email.accountId,
+			toEmail: email.toEmail,
+			recipient: email.recipient
+		}).from(email)
 			.where(eq(email.emailId, Number(emailId))).get();
-		const canRead = emailRow && (emailRow.userId === userId || (await roleService.selectSharedAccountIds(c, userId)).includes(emailRow.accountId));
+		const canRead = emailRow && (emailRow.userId === userId || await roleService.canReadSharedEmail(c, userId, emailRow));
 		if (!canRead) {
 			return [];
 		}

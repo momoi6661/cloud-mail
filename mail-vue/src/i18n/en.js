@@ -337,7 +337,7 @@ const en = {
     searchEmail: 'Search by Email',
     searchSender: 'Search by Sender',
     userEmail: 'Email Address',
-    sharedEmail: 'Shared mailbox addresses (select View Shared Mailbox first)'
+    sharedEmail: 'Allowed recipient addresses (one or more)'
 }
 
 export default en

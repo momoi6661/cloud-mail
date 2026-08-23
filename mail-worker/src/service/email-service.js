@@ -54,15 +54,7 @@ const emailService = {
 			allReceive = accountRow.allReceive;
 		}
 
-		const visibleAccountIds = await this.selectVisibleAccountIds(c, userId, accountId);
-		const hasSharedAccount = visibleAccountIds.length > 1;
-		const ownAccountCondition = allReceive ? eq(1, 1) : eq(email.accountId, accountId);
-		const visibleAccountCondition = hasSharedAccount
-			? or(
-				and(eq(email.userId, userId), ownAccountCondition),
-				inArray(email.accountId, visibleAccountIds.slice(1))
-			)
-			: and(eq(email.userId, userId), ownAccountCondition);
+		const visibleEmailCondition = await this.selectVisibleEmailCondition(c, userId, accountId, allReceive);
 
 		const query = orm(c)
 			.select({
@@ -82,7 +74,7 @@ const emailService = {
 			)
 			.where(
 				and(
-					visibleAccountCondition,
+					visibleEmailCondition,
 					timeSort ? gt(email.emailId, emailId) : lt(email.emailId, emailId),
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
@@ -105,7 +97,7 @@ const emailService = {
 			)
 			.where(
 				and(
-					visibleAccountCondition,
+					visibleEmailCondition,
 					eq(email.type, type),
 					eq(email.isDel, isDel.NORMAL),
 					eq(account.isDel, isDel.NORMAL)
@@ -114,7 +106,7 @@ const emailService = {
 
 		const latestEmailQuery = orm(c).select().from(email).where(
 			and(
-				visibleAccountCondition,
+				visibleEmailCondition,
 				eq(email.type, type),
 				eq(email.isDel, isDel.NORMAL)
 			))
@@ -161,16 +153,34 @@ const emailService = {
 			.run();
 	},
 
-	async selectVisibleAccountIds(c, userId, accountId) {
+	async selectVisibleEmailCondition(c, userId, accountId, allReceive) {
 		const currentAccount = await accountService.selectById(c, accountId);
 		const userRow = await userService.selectById(c, userId);
+		const ownAccountCondition = allReceive ? eq(1, 1) : eq(email.accountId, accountId);
+		const ownEmailCondition = and(eq(email.userId, userId), ownAccountCondition);
 		if (!currentAccount || !userRow || currentAccount.userId !== userId ||
 			currentAccount.email.toLowerCase() !== userRow.email.toLowerCase()) {
-			return [accountId];
+			return ownEmailCondition;
 		}
 
-		const sharedAccountIds = await roleService.selectSharedAccountIds(c, userId);
-		return [accountId, ...sharedAccountIds.filter(id => id !== accountId)];
+		const access = await roleService.selectSharedAccess(c, userId);
+		if (!access) {
+			return ownEmailCondition;
+		}
+
+		const recipientValues = sql.join(access.recipients.map(value => sql`${value}`), sql`, `);
+		const sharedRecipientCondition = and(
+			eq(email.userId, access.adminUserId),
+			or(
+				inArray(sql`lower(${email.toEmail})`, access.recipients),
+				sql`EXISTS (
+					SELECT 1
+					FROM json_each(CASE WHEN json_valid(${email.recipient}) THEN ${email.recipient} ELSE '[]' END) AS shared_recipient
+					WHERE lower(json_extract(shared_recipient.value, '$.address')) IN (${recipientValues})
+				)`
+			)
+		);
+		return or(ownEmailCondition, sharedRecipientCondition);
 	},
 
 	receive(c, params, cidAttList, r2domain) {
@@ -730,8 +740,7 @@ const emailService = {
 		if (!emailRow || userId === undefined || emailRow.userId === userId) {
 			return emailRow;
 		}
-		const sharedAccountIds = await roleService.selectSharedAccountIds(c, userId);
-		return sharedAccountIds.includes(emailRow.accountId) ? emailRow : null;
+		return await roleService.canReadSharedEmail(c, userId, emailRow) ? emailRow : null;
 	},
 
 	async latest(c, params, userId) {
@@ -743,11 +752,7 @@ const emailService = {
 			allReceive = accountRow.allReceive;
 		}
 
-		const visibleAccountIds = await this.selectVisibleAccountIds(c, userId, accountId);
-		const ownAccountCondition = allReceive ? eq(1, 1) : eq(email.accountId, accountId);
-		const visibleAccountCondition = visibleAccountIds.length > 1
-			? or(and(eq(email.userId, userId), ownAccountCondition), inArray(email.accountId, visibleAccountIds.slice(1)))
-			: and(eq(email.userId, userId), ownAccountCondition);
+		const visibleEmailCondition = await this.selectVisibleEmailCondition(c, userId, accountId, allReceive);
 
 		let list = await orm(c).select({...email}).from(email)
 			.leftJoin(
@@ -757,7 +762,7 @@ const emailService = {
 			.where(
 				and(
 					gt(email.emailId, emailId),
-					visibleAccountCondition,
+					visibleEmailCondition,
 					eq(email.isDel, isDel.NORMAL),
 					eq(account.isDel, isDel.NORMAL),
 					eq(email.type, emailConst.type.RECEIVE)

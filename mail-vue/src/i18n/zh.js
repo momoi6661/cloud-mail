@@ -337,6 +337,6 @@ const zh = {
     searchEmail: '搜索邮箱',
     searchSender: '搜索发件人',
     userEmail: '用户邮箱',
-    sharedEmail: '共享邮箱地址（先勾选“共享邮箱查看”权限）'
+    sharedEmail: '允许查看的收件人地址（可填写一个或多个）'
 }
 export default zh
