@@ -74,6 +74,26 @@
             </div>
           </div>
 
+          <div class="settings-card" v-if="setting.domainManaged">
+            <div class="card-title">{{ $t('mailDomains') }}</div>
+            <div class="card-content">
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('mailDomains') }}</span>
+                  <el-tooltip effect="dark" :content="$t('mailDomainsDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div class="forward">
+                  <span class="domain-summary">{{ mailDomains.join(', ') }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openMailDomains">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Personalization Settings Card -->
           <div class="settings-card">
             <div class="card-title">{{ $t('customization') }}</div>
@@ -460,6 +480,14 @@
           <el-button type="primary" :loading="settingLoading" @click="saveResendToken">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
+      <el-dialog v-if="setting.domainManaged" v-model="mailDomainsShow" :title="$t('editMailDomains')" width="340"
+                 @closed="resetMailDomains">
+        <form>
+          <el-input-tag tag-type="warning" :placeholder="$t('mailDomainsInputDesc')" v-model="mailDomainsInput"
+                        @add-tag="mailDomainAddTag"></el-input-tag>
+          <el-button type="primary" :loading="settingLoading" @click="saveMailDomains">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
       <el-dialog v-model="r2DomainShow" :title="$t('addOsDomain')" width="340"
                  @closed="r2DomainInput = setting.r2Domain">
         <form>
@@ -837,6 +865,7 @@ const accountStore = useAccountStore();
 const userStore = useUserStore();
 const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
+const mailDomainsShow = ref(false)
 const blackFormShow = ref(false)
 const aiCodeFilterShow = ref(false)
 const r2DomainShow = ref(false)
@@ -922,6 +951,8 @@ const customDomain = ref('')
 const tgBotStatus = ref(0)
 const tgBotToken = ref('')
 const forwardEmail = ref([])
+const mailDomains = ref([])
+const mailDomainsInput = ref([])
 const forwardStatus = ref(0)
 const emailColumnWidth = ref(0)
 const tokenColumnWidth = ref(0)
@@ -944,6 +975,7 @@ function getSettings() {
   settingQuery().then(settingData => {
     setting.value = settingData
     settingStore.domainList = settingData.domainList;
+    mailDomains.value = (settingData.domainList || []).map(item => item.replace(/^@/, ''))
     resendTokenForm.domain = setting.value.domainList[0]
     loginOpacity.value = setting.value.loginOpacity
     minEmailPrefix.value = setting.value.minEmailPrefix
@@ -1074,6 +1106,37 @@ function openNoticePopupSetting() {
 
 function openResendList() {
   showResendList.value = true
+}
+
+function openMailDomains() {
+  mailDomainsInput.value = [...mailDomains.value]
+  mailDomainsShow.value = true
+}
+
+function resetMailDomains() {
+  mailDomainsInput.value = [...mailDomains.value]
+}
+
+function mailDomainAddTag(val) {
+  const domains = Array.from(new Set(
+      val.split(/[,，]/).map(item => item.trim().replace(/^@/, '').toLowerCase()).filter(item => item)
+  ));
+
+  mailDomainsInput.value.splice(mailDomainsInput.value.length - 1, 1)
+  domains.forEach(domain => {
+    if (isDomain(domain) && !mailDomainsInput.value.includes(domain)) {
+      mailDomainsInput.value.push(domain)
+    }
+  })
+}
+
+function saveMailDomains() {
+  const domains = mailDomainsInput.value.filter(domain => isDomain(domain))
+  if (domains.length === 0) {
+    ElMessage({message: t('notEmailMsg'), type: 'warning', plain: true})
+    return
+  }
+  editSetting({domains})
 }
 
 function resetNoticeForm() {

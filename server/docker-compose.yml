@@ -1,0 +1,25 @@
+services:
+  cloud-mail:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    environment:
+      MAIL_HOST: 0.0.0.0
+      MAIL_PORT: 8787
+      MAIL_SMTP_HOST: 0.0.0.0
+      MAIL_SMTP_PORT: 2525
+      MAIL_SMTP_ENABLED: ${MAIL_SMTP_ENABLED:-true}
+      MAIL_DOMAINS: ${MAIL_DOMAINS:-example.com}
+      MAIL_ADMIN: ${MAIL_ADMIN:-admin@example.com}
+      MAIL_JWT_SECRET: ${MAIL_JWT_SECRET:?set MAIL_JWT_SECRET before starting}
+      MAIL_INBOUND_TOKEN: ${MAIL_INBOUND_TOKEN:-}
+      MAIL_DB_PATH: /app/server/data/cloud-mail.sqlite
+      MAIL_STORAGE_PATH: /app/server/data/objects
+      MAIL_STATIC_DIR: /app/mail-worker/dist
+    ports:
+      - "${HTTP_PORT:-8787}:8787"
+      # Internet MX delivery normally needs host TCP 25. Change SMTP_PORT if needed.
+      - "${SMTP_PORT:-25}:2525"
+    volumes:
+      - ./data:/app/server/data
+    restart: unless-stopped

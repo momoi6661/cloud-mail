@@ -31,7 +31,7 @@ const settingService = {
 			throw new BizError('数据库未初始化 Database not initialized.');
 		}
 
-		let domainList = c.env.domain;
+		let domainList = c.env.domainProvider ? await c.env.domainProvider.get() : c.env.domain;
 
 		if (typeof domainList === 'string') {
 			try {
@@ -47,6 +47,7 @@ const settingService = {
 
 		domainList = domainList.map(item => '@' + item);
 		setting.domainList = domainList;
+		setting.domainManaged = !!c.env.domainProvider;
 
 
 		let linuxdoSwitch = c.env.linuxdo_switch;
@@ -126,6 +127,13 @@ const settingService = {
 
 	async set(c, params) {
 		const settingData = await this.query(c);
+		if (params.domains !== undefined) {
+			if (!c.env.domainProvider) {
+				throw new BizError('当前部署不支持运行时修改邮箱域名');
+			}
+			await c.env.domainProvider.set(params.domains);
+			delete params.domains;
+		}
 		let resendTokens = { ...settingData.resendTokens, ...params.resendTokens };
 		Object.keys(resendTokens).forEach(domain => {
 			if (!resendTokens[domain]) delete resendTokens[domain];

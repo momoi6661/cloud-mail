@@ -1,0 +1,7 @@
+.git
+.gitignore
+**/node_modules
+**/dist
+server/data
+server/config.local.json
+*.log

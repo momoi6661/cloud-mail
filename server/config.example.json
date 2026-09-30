@@ -1,0 +1,20 @@
+{
+  "host": "0.0.0.0",
+  "port": 8787,
+  "smtpHost": "0.0.0.0",
+  "smtpPort": 2525,
+  "smtpEnabled": true,
+  "domains": [
+    "example.com"
+  ],
+  "admin": "admin@example.com",
+  "jwtSecret": "replace-with-a-long-random-secret",
+  "databasePath": "./data/cloud-mail.sqlite",
+  "storagePath": "./data/objects",
+  "staticDir": "../mail-worker/dist",
+  "inboundEmailToken": "replace-with-an-inbound-webhook-token",
+  "analysisCache": false,
+  "ormLog": false,
+  "projectLink": true,
+  "linuxdoSwitch": false
+}

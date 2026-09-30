@@ -472,6 +472,33 @@ const emailService = {
 		return await resend.emails.send(sendForm);
 	},
 
+	async forwardReceivedEmail(c, parsedEmail, sourceAddress, recipients) {
+		const { resendTokens } = await settingService.query(c);
+		const sourceDomain = emailUtils.getDomain(sourceAddress).toLowerCase();
+		const resendToken = resendTokens[sourceDomain] || resendTokens[emailUtils.getDomain(sourceAddress)];
+		if (!resendToken) {
+			throw new BizError(`未配置 ${sourceDomain} 的 Resend API Key，无法转发入站邮件`);
+		}
+
+		const resend = new Resend(resendToken);
+		const attachments = await this.toResendAttachments(parsedEmail.attachments || []);
+		const sendForm = {
+			from: sourceAddress,
+			to: recipients.filter(Boolean),
+			subject: parsedEmail.subject || '',
+			text: parsedEmail.text || undefined,
+			html: parsedEmail.html || undefined,
+			reply_to: parsedEmail.from?.address || undefined,
+			attachments
+		};
+
+		const result = await resend.emails.send(sendForm);
+		if (result.error) {
+			throw new BizError(result.error.message || 'Resend 转发失败');
+		}
+		return result;
+	},
+
 	async toCloudflareAttachments(attachments) {
 		const arrayBufferAttachments = await this.toArrayBufferAttachments(attachments);
 

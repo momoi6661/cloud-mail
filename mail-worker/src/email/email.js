@@ -167,15 +167,11 @@ export async function email(message, env, ctx) {
 
 			const emails = forwardEmail.split(',');
 
-			await Promise.all(emails.map(async email => {
-
-				try {
-					await message.forward(email);
-				} catch (e) {
-					console.error(`转发邮箱 ${email} 失败：`, e);
-				}
-
-			}));
+			try {
+				await emailService.forwardReceivedEmail({ env }, email, message.to, emails);
+			} catch (e) {
+				console.error('入站邮件转发失败：', e);
+			}
 
 		}
 
