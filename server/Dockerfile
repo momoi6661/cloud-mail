@@ -17,7 +17,7 @@ RUN pnpm --dir mail-vue build
 
 FROM node:22-bookworm-slim
 
-WORKDIR /app
+WORKDIR /app/server
 ENV NODE_ENV=production
 COPY --from=build /app /app
 RUN mkdir -p /app/server/data
@@ -25,4 +25,4 @@ RUN mkdir -p /app/server/data
 EXPOSE 8787 2525
 VOLUME ["/app/server/data"]
 
-CMD ["node", "--no-warnings", "--import", "tsx", "server/src/main.js"]
+CMD ["node", "--no-warnings", "--import", "tsx", "src/main.js"]
