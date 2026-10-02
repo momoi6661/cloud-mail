@@ -1,5 +1,6 @@
 import { SMTPServer } from 'smtp-server';
 import { processInboundEmail } from './email-webhook.js';
+import { isLocalRecipient } from './recipient-policy.js';
 
 function collect(stream) {
 	return new Promise((resolve, reject) => {
@@ -17,8 +18,12 @@ export function startSmtpServer({ config, env }) {
 		authOptional: true,
 		allowInsecureAuth: true,
 		disabledCommands: ['AUTH', 'STARTTLS'],
-		// Recipient policy is enforced by the existing application after MIME parsing.
 		onRcptTo(address, session, callback) {
+			if (!isLocalRecipient(address.address, env)) {
+				const error = new Error('Recipient domain is not hosted here');
+				error.responseCode = 550;
+				return callback(error);
+			}
 			callback();
 		},
 		async onData(stream, session, callback) {
@@ -35,7 +40,7 @@ export function startSmtpServer({ config, env }) {
 					const result = await processInboundEmail({ raw, to: recipient.address }, env);
 					if (!result.accepted) {
 						const error = new Error(result.reason || 'Message rejected');
-						error.responseCode = result.status || 550;
+						error.responseCode = 550;
 						return callback(error);
 					}
 				}

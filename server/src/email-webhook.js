@@ -1,4 +1,5 @@
 import { email } from '../../mail-worker/src/email/email.js';
+import { isLocalRecipient } from './recipient-policy.js';
 
 function header(c, name) {
 	return c.req.header(name) || c.req.header(name.toLowerCase());
@@ -6,6 +7,9 @@ function header(c, name) {
 
 export async function processInboundEmail({ raw, to }, env) {
 	if (!to) return { accepted: false, status: 400, reason: 'missing recipient' };
+	if (!isLocalRecipient(to, env)) {
+		return { accepted: false, status: 422, reason: 'Recipient domain is not hosted here' };
+	}
 	let rejected = null;
 	const message = {
 		to,
